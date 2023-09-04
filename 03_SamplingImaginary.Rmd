@@ -8,3 +8,147 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+```{r}
+# generating globe-tossing samples:
+n <- 1000
+n_success <- 3
+n_trials  <- 3
+n_samples = 1e4
+set.seed(1)
+
+# generate a table of posteriors using a list of probabilities and a binomial distribution.
+globe_toss <- tibble(p_grid = seq(from = 0, to = 1, length.out = n), 
+       prior = 1
+       ) %>% 
+       mutate(likelihood = dbinom(x = n_success, size = n_trials, prob = p_grid),
+              ustd_posterior = likelihood * prior,
+              std_posterior = ustd_posterior/sum(ustd_posterior)
+       )
+
+# sample the data, weighted by the posterior probability.
+samples <- globe_toss %>% 
+  slice_sample(n = n_samples, weight_by = std_posterior, replace = T) 
+
+samples %>% 
+  mutate(sample_number = 1:n()) %>% 
+  
+  ggplot(aes(x = sample_number, y = p_grid)) +
+    geom_point(alpha = 0.1) +
+    scale_y_continuous("Proportion of Water (p)", limits = c(0,1)) +
+    xlab("Sample Number")
+
+```
+
+```{r}
+samples %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("Proportion of Water (p)", limits = c(0, 1))
+```
+
+```{r}
+#3.2 Sampling to summarize
+
+# summarize how much of the posterior probability below 0.5.
+samples %>% 
+  filter(p_grid < 0.5) %>% 
+  dplyr::summarise(sum = sum(std_posterior)) # gives 1.675, which does not make sense.
+
+# summarize by frequency
+samples %>% 
+  filter(p_grid < 0.5) %>% 
+  dplyr::summarise(sum = n()/(n_samples))
+
+# summarize number of samples above and below the 0.5 threshold and include the cumulative probability.
+samples %>% 
+  count(p_grid < 0.5) %>% 
+  mutate(probability = n / sum(n))
+
+# calculate probabilities between thresholds:
+samples %>% 
+  filter(p_grid > 0.5 & p_grid < .75) %>% 
+  summarise(sum = n() / n_samples, 
+            percent = n() / n_samples * 100)
+
+```
+```{r}
+# plotting compatability intervals
+
+p_left <- globe_toss %>% 
+  ggplot(aes(x = p_grid, y = std_posterior)) +
+    geom_line() +
+    geom_area(data = globe_toss %>% filter(p_grid < 0.5)) +
+    labs(x = "Proportion of Water (p)",
+         y = "Density")
+
+p_right <- globe_toss %>% 
+  ggplot(aes(x = p_grid, y = std_posterior)) +
+    geom_line() +
+    geom_area(data = globe_toss %>% filter(p_grid < 0.75 & p_grid > 0.5)) +
+    labs(x = "Proportion of Water (p)",
+         y = "Density")
+
+
+p_left + p_right
+```
+
+```{r}
+# get quantiles
+
+q_80 <- quantile(samples$p_grid, prob = 0.8)
+
+# alternate approach using pull and dplyr:
+samples %>% 
+  pull(p_grid) %>% 
+  quantile(prob = 0.80)
+
+# or
+samples %>% 
+  summarise(`10th percentile` = quantile(p_grid, p = 0.1),
+            `90th percentile` = quantile(p_grid, p = 0.9)
+           )
+
+# or, for quick indexing
+q10_and_q90 <- quantile(samples$p_grid, prob = c(0.1, 0.9))
+  
+```
+
+```{r}
+# more plots
+p_left_btm <- globe_toss %>% 
+  ggplot(aes(p_grid, y = std_posterior)) +
+  geom_line() +
+  geom_area(data = globe_toss %>% filter(p_grid < q_80)) +
+  annotate(geom = "text",
+           x = 0.25, y = 0.0025,
+           label = "lower 80%") +
+  labs(x = "Proportion of Water (p)",
+       y = "Density")
+
+p_right_btm <- globe_toss %>% 
+  ggplot(aes(p_grid, y = std_posterior)) +
+  geom_line() +
+  geom_area(data = globe_toss %>% filter(p_grid > q10_and_q90[1] & p_grid < q10_and_q90[2])) +
+  annotate(geom = "text",
+           x = 0.25, y = 0.0025,
+           label = "middle 80%") +
+  labs(x = "Proportion of Water (p)",
+       y = "Density")
+
+p_left_btm + p_right_btm
+```
+
+```{r}
+# probability intervals
+
+
+```
+
+
